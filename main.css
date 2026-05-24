@@ -562,3 +562,64 @@ button:disabled {
   .field-row { flex-direction: column; gap: 0; }
   .detail-summary { flex-direction: column; }
 }
+
+/* Variant tabs */
+.variant-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+.variant-tab {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  background: var(--surface2);
+  color: var(--text2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.variant-tab:hover { border-color: var(--text3); color: var(--text); }
+.variant-tab.active {
+  background: var(--primary-dim);
+  border-color: var(--primary);
+  color: #fff;
+}
+.variant-tab.variant-add {
+  background: transparent;
+  border-style: dashed;
+  color: var(--primary);
+  font-size: 0.78rem;
+}
+
+/* Variant section */
+.variant-section {
+  margin-bottom: 8px;
+}
+.variant-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.variant-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.variant-actions {
+  display: flex;
+  gap: 4px;
+}
+.variant-actions-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}

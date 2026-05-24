@@ -32,8 +32,11 @@ let items = [];
 let user = null;
 let db = null;
 let selectedCat = '';
-let priceEditIdx = -1;
+let activeVariantId = null;
+let priceEditVariantId = null;
+let priceEditIdx = null;
 let detailItemId = null;
+let detailActiveVariant = null;
 
 // DOM refs
 const $list = document.getElementById('items-list');
@@ -76,15 +79,8 @@ function bindEvents() {
   document.getElementById('btn-item-save').addEventListener('click', saveItem);
   document.getElementById('btn-item-delete').addEventListener('click', deleteItem);
   document.getElementById('item-modal').addEventListener('click', e => { if (e.target === $itemModal) closeItemModal(); });
-
+  document.getElementById('d-edit-item').onclick = () => { closeDetailModal(); openItemModal(items.find(i => i.id === detailItemId)); };
   document.getElementById('btn-detail-close').addEventListener('click', closeDetailModal);
-  document.getElementById('btn-search-prices').addEventListener('click', () => {
-    if (detailItemId) searchItemPrices(detailItemId);
-  });
-  document.getElementById('btn-detail-add-price').addEventListener('click', () => {
-    closeDetailModal();
-    openPriceModal(detailItemId);
-  });
   document.getElementById('detail-modal').addEventListener('click', e => { if (e.target === $detailModal) closeDetailModal(); });
 
   document.getElementById('btn-price-cancel').addEventListener('click', closePriceModal);
@@ -165,53 +161,80 @@ function deleteFirebase(id) {
   db.ref(`users/${user.uid}/priced/${id}`).remove();
 }
 
-// Migrate legacy flat items to multi-price format
+// Migrate legacy flat items to variant model
 function migrateItems(raw) {
   return raw.map(i => {
-    if (i.prices) return i; // already new format
-    // Legacy: single {price, qty, store, date, notes}
+    if (i.variants) return i; // already new format
+    // Legacy: item with flat prices
+    const vId = 'v1';
+    const prices = i.prices && i.prices.length > 0
+      ? i.prices.map(p => ({ ...p }))
+      : [{
+          id: 'p1',
+          store: i.store || '',
+          price: parseFloat(i.price) || 0,
+          qty: i.qty || '1 unit',
+          date: i.date || new Date().toISOString().split('T')[0],
+          notes: i.notes || '',
+          type: 'manual'
+        }];
     return {
       id: i.id,
       name: i.name,
       category: i.category || 'other',
       createdAt: i.createdAt || Date.now(),
       updatedAt: i.updatedAt || Date.now(),
-      prices: [{
-        id: 'p1',
-        store: i.store || '',
-        price: parseFloat(i.price) || 0,
-        qty: i.qty || '1 unit',
-        date: i.date || new Date().toISOString().split('T')[0],
-        notes: i.notes || '',
-        type: 'manual'
-      }]
+      variants: [{ id: vId, label: 'Default', prices }]
     };
   });
 }
 
 function getCheapest(item) {
-  if (!item.prices || item.prices.length === 0) return null;
-  return item.prices.reduce((a, b) => (a.price || 0) <= (b.price || 0) ? a : b);
+  if (!item.variants) return null;
+  let best = null;
+  for (const v of item.variants) {
+    if (!v.prices || v.prices.length === 0) continue;
+    const vBest = v.prices.reduce((a, b) => (a.price || 0) <= (b.price || 0) ? a : b);
+    if (!best || vBest.price < best.price) best = vBest;
+  }
+  return best;
+}
+
+function getVariantCheapest(variant) {
+  if (!variant || !variant.prices || variant.prices.length === 0) return null;
+  return variant.prices.reduce((a, b) => (a.price || 0) <= (b.price || 0) ? a : b);
+}
+
+function getAllPrices(item) {
+  if (!item.variants) return [];
+  return item.variants.flatMap(v => (v.prices || []).map(p => ({ ...p, _variant: v.id, _variantLabel: v.label })));
+}
+
+function getVariantCount(item) {
+  return item.variants ? item.variants.length : 0;
+}
+
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
 // CRUD
 function addItem(data) {
   const item = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: genId(),
     name: data.name.trim(),
     category: selectedCat || 'other',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    prices: []
+    variants: [{ id: genId(), label: 'Default', prices: [] }]
   };
   items.unshift(item);
   saveLocal();
   saveFirebase(item);
   render();
   closeItemModal();
-  // Open detail view so user can add prices
   setTimeout(() => openDetail(item.id), 100);
-  toast('Item added — now add prices');
+  toast('Item added — now add variants & prices');
 }
 
 function updateItem(id, data) {
@@ -233,12 +256,15 @@ function removeItem(id) {
 }
 
 // Price entry CRUD
-function addPriceEntry(itemId, data) {
+function addPriceEntry(itemId, variantId, data) {
   const item = items.find(i => i.id === itemId);
   if (!item) return;
-  if (!item.prices) item.prices = [];
+  let variant = item.variants.find(v => v.id === variantId);
+  if (!variant) variant = item.variants[0];
+  if (!variant) return;
+  if (!variant.prices) variant.prices = [];
   const entry = {
-    id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4),
+    id: 'e' + genId(),
     store: data.store.trim(),
     price: parseFloat(data.price) || 0,
     qty: data.qty.trim() || '1 unit',
@@ -246,20 +272,22 @@ function addPriceEntry(itemId, data) {
     notes: data.notes.trim(),
     type: data.type || 'manual'
   };
-  item.prices.push(entry);
+  variant.prices.push(entry);
   item.updatedAt = Date.now();
   saveLocal();
   saveFirebase(item);
   render();
 }
 
-function updatePriceEntry(itemId, entryId, data) {
+function updatePriceEntry(itemId, variantId, entryId, data) {
   const item = items.find(i => i.id === itemId);
-  if (!item || !item.prices) return;
-  const idx = item.prices.findIndex(p => p.id === entryId);
+  if (!item) return;
+  const variant = item.variants.find(v => v.id === variantId);
+  if (!variant || !variant.prices) return;
+  const idx = variant.prices.findIndex(p => p.id === entryId);
   if (idx === -1) return;
-  item.prices[idx] = {
-    ...item.prices[idx],
+  variant.prices[idx] = {
+    ...variant.prices[idx],
     store: data.store.trim(),
     price: parseFloat(data.price) || 0,
     qty: data.qty.trim() || '1 unit',
@@ -272,17 +300,23 @@ function updatePriceEntry(itemId, entryId, data) {
   render();
 }
 
-function removePriceEntry(itemId, entryId) {
+function removePriceEntry(itemId, variantId, entryId) {
   const item = items.find(i => i.id === itemId);
-  if (!item || !item.prices) return;
-  item.prices = item.prices.filter(p => p.id !== entryId);
+  if (!item) return;
+  const variant = item.variants.find(v => v.id === variantId);
+  if (!variant || !variant.prices) return;
+  variant.prices = variant.prices.filter(p => p.id !== entryId);
   item.updatedAt = Date.now();
   saveLocal();
   saveFirebase(item);
-  // Remove item entirely if no prices left
-  if (item.prices.length === 0) {
+  // Remove variant entirely if no prices left
+  if (variant.prices.length === 0 && item.variants.length > 1) {
+    item.variants = item.variants.filter(v => v.id !== variantId);
+  }
+  // Remove item if no variants left
+  if (item.variants.length === 0) {
     removeItem(itemId);
-    toast('Item removed (no prices)');
+    toast('Item removed (empty)');
   }
   render();
 }
@@ -297,9 +331,10 @@ function render() {
   if (search) filtered = filtered.filter(i => i.name.toLowerCase().includes(search));
   if (catFilter) filtered = filtered.filter(i => i.category === catFilter);
   if (storeFilter) {
-    filtered = filtered.filter(i =>
-      i.prices && i.prices.some(p => p.store === storeFilter)
-    );
+    filtered = filtered.filter(i => {
+      const allPrices = getAllPrices(i);
+      return allPrices.some(p => p.store === storeFilter);
+    });
   }
 
   if (filtered.length === 0) {
@@ -315,7 +350,11 @@ function render() {
   $list.innerHTML = filtered.map(item => {
     const cat = CATEGORIES.find(c => c.id === item.category) || CATEGORIES[CATEGORIES.length - 1];
     const cheapest = getCheapest(item);
-    const priceCount = (item.prices || []).length;
+    const vCount = getVariantCount(item);
+    const priceCount = getAllPrices(item).length;
+    const variantInfo = vCount > 0 && item.variants[0].label !== 'Default'
+      ? `<span>·</span><span>${vCount} size${vCount > 1 ? 's' : ''}</span>`
+      : '';
     return `
       <div class="item" data-id="${item.id}">
         <div class="item-cat-dot" style="background:${cat.color};" title="${cat.label}"></div>
@@ -323,7 +362,8 @@ function render() {
           <div class="item-name">${esc(item.name)}</div>
           <div class="item-meta">
             ${priceCount > 0 ? `<span class="price-count">${priceCount} price${priceCount > 1 ? 's' : ''}</span>` : '<span class="price-count empty">no prices</span>'}
-            ${priceCount > 1 ? `<span>·</span><span>from ${cheapest ? esc(cheapest.store) : '—'}</span>` : ''}
+            ${variantInfo}
+            ${priceCount > 1 && cheapest ? `<span>·</span><span>from ${esc(cheapest.store)}</span>` : ''}
           </div>
         </div>
         ${cheapest ? `<div class="item-price">RM ${cheapest.price.toFixed(2)}<div class="unit">/${cheapest.qty.split(' ')[1] || 'unit'}</div></div>` : `<div class="item-price no-price">—</div>`}
@@ -345,13 +385,47 @@ function renderCategoryFilter() {
 
 function updateFilters() {
   const allStores = [...new Set(
-    items.flatMap(i => (i.prices || []).map(p => p.store))
+    items.flatMap(i => getAllPrices(i))
+      .map(p => p.store)
       .filter(Boolean)
       .concat(STORES)
   )].sort();
   $filterStore.innerHTML = '<option value="">All stores</option>' +
     allStores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   document.getElementById('price-store-list').innerHTML = allStores.map(s => `<option value="${esc(s)}">`).join('');
+}
+
+// ---- Variant CRUD ----
+function addVariant(itemId, label) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  item.variants.push({ id: genId(), label: label.trim() || 'New size', prices: [] });
+  item.updatedAt = Date.now();
+  saveLocal();
+  saveFirebase(item);
+  render();
+}
+
+function renameVariant(itemId, variantId, label) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  const v = item.variants.find(x => x.id === variantId);
+  if (!v) return;
+  v.label = label.trim() || v.label;
+  item.updatedAt = Date.now();
+  saveLocal();
+  saveFirebase(item);
+}
+
+function removeVariant(itemId, variantId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item || item.variants.length < 2) return;
+  item.variants = item.variants.filter(v => v.id !== variantId);
+  item.updatedAt = Date.now();
+  saveLocal();
+  saveFirebase(item);
+  if (item.variants.length === 0) removeItem(itemId);
+  render();
 }
 
 // ---- MODAL: Add/Edit Item ----
@@ -400,8 +474,8 @@ function deleteItem() {
   }
 }
 
-// ---- MODAL: Detail View (price comparison) ----
-function openDetail(itemId) {
+// ---- MODAL: Detail View (variant-aware) ----
+function openDetail(itemId, focusVariantId) {
   const item = items.find(i => i.id === itemId);
   if (!item) return;
   detailItemId = itemId;
@@ -411,15 +485,62 @@ function openDetail(itemId) {
   document.getElementById('d-cat-badge').textContent = cat.label;
   document.getElementById('d-cat-badge').style.borderColor = cat.color;
   document.getElementById('d-cat-badge').style.color = cat.color;
+  document.getElementById('d-edit-item').onclick = () => { closeDetailModal(); openItemModal(item); };
 
-  // Edit item button
-  document.getElementById('d-edit-item').onclick = () => {
-    closeDetailModal();
-    openItemModal(item);
-  };
+  const $tabs = document.getElementById('d-variant-tabs');
+  const $sections = document.getElementById('d-variant-sections');
+  const $scrapeArea = document.getElementById('d-scrape-results');
+  $scrapeArea.innerHTML = '';
+  const vCount = getVariantCount(item);
 
-  const prices = (item.prices || []).slice().sort((a, b) => (a.price || 0) - (b.price || 0));
-  const cheapest = prices[0];
+  if (vCount <= 1 && item.variants[0].label === 'Default') {
+    // Single variant — show directly, no tabs
+    $tabs.innerHTML = '';
+    renderVariantSection($sections, item, item.variants[0]);
+  } else {
+    // Multiple variants — show tabs
+    const activeV = focusVariantId
+      ? item.variants.find(v => v.id === focusVariantId) || item.variants[0]
+      : item.variants[0];
+    detailActiveVariant = activeV.id;
+
+    $tabs.innerHTML = item.variants.map(v =>
+      `<button class="variant-tab ${v.id === activeV.id ? 'active' : ''}" data-vid="${v.id}" onclick="switchVariantTab('${item.id}','${v.id}')">${esc(v.label)}</button>`
+    ).join('') +
+    `<button class="variant-tab variant-add" onclick="promptAddVariant('${item.id}')">+ Add variant</button>`;
+
+    renderVariantSection($sections, item, activeV);
+  }
+
+  $detailModal.classList.add('show');
+}
+
+function switchVariantTab(itemId, variantId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  detailActiveVariant = variantId;
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.toggle('active', t.dataset.vid === variantId));
+  const v = item.variants.find(x => x.id === variantId);
+  if (v) renderVariantSection(document.getElementById('d-variant-sections'), item, v);
+}
+
+function promptAddVariant(itemId) {
+  const label = prompt('Variant name (e.g. "Can 320ml"):');
+  if (label && label.trim()) {
+    addVariant(itemId, label.trim());
+    openDetail(itemId, itemId === detailItemId ? undefined : undefined);
+    // Re-open to show the new variant — find its id
+    const item = items.find(i => i.id === itemId);
+    if (item) {
+      const newV = item.variants[item.variants.length - 1];
+      switchVariantTab(itemId, newV.id);
+    }
+  }
+}
+
+function renderVariantSection($el, item, variant) {
+  const prices = (variant.prices || []).slice().sort((a, b) => (a.price || 0) - (b.price || 0));
+  const cheapest = getVariantCheapest(variant);
   const mostExpensive = prices[prices.length - 1];
   const priceRange = prices.length > 1
     ? `RM ${cheapest.price.toFixed(2)} – RM ${mostExpensive.price.toFixed(2)}`
@@ -428,62 +549,97 @@ function openDetail(itemId) {
     ? prices.reduce((s, p) => s + p.price, 0) / prices.length
     : 0;
 
-  document.getElementById('d-range').textContent = priceRange;
-  document.getElementById('d-avg').textContent = `RM ${avgPrice.toFixed(2)}`;
-  document.getElementById('d-count').textContent = `${prices.length} price${prices.length !== 1 ? 's' : ''}`;
+  let html = `<div class="variant-section" data-vid="${variant.id}">`;
+
+  // Variant header with rename/delete
+  html += `<div class="variant-header">
+    <span class="variant-label">${esc(variant.label)}</span>
+    <div class="variant-actions">
+      <button class="btn-ghost btn-xs" onclick="renameVariantPrompt('${item.id}','${variant.id}')">✏️</button>
+      ${item.variants.length > 1 ? `<button class="btn-ghost btn-xs" style="color:var(--red)" onclick="removeVariant('${item.id}','${variant.id}')">🗑️</button>` : ''}
+    </div>
+  </div>`;
+
+  // Summary
+  html += `<div class="detail-summary">
+    <div class="summary-card"><div class="summary-label">Price range</div><div class="summary-value">${priceRange}</div></div>
+    <div class="summary-card"><div class="summary-label">Average</div><div class="summary-value">RM ${avgPrice.toFixed(2)}</div></div>
+    <div class="summary-card"><div class="summary-label">Entries</div><div class="summary-value">${prices.length}</div></div>
+  </div>`;
 
   // Best deal
   if (cheapest) {
-    document.getElementById('d-best-store').textContent = esc(cheapest.store) || '—';
-    document.getElementById('d-best-price').textContent = `RM ${cheapest.price.toFixed(2)}`;
-    document.getElementById('d-best-qty').textContent = cheapest.qty;
-    document.getElementById('d-best-date').textContent = cheapest.date;
-    document.getElementById('d-best-card').style.display = 'block';
-  } else {
-    document.getElementById('d-best-card').style.display = 'none';
+    html += `<div class="best-card">
+      <div class="best-label">⭐ Best price</div>
+      <div class="best-details">
+        <span class="best-store">${esc(cheapest.store)}</span>
+        <span class="best-price">RM ${cheapest.price.toFixed(2)}</span>
+        <span class="best-meta">${cheapest.qty}</span>
+        <span class="best-meta">${cheapest.date}</span>
+      </div>
+    </div>`;
   }
 
   // Price list
-  const $priceList = document.getElementById('d-price-list');
   if (prices.length === 0) {
-    $priceList.innerHTML = `<div class="empty-state" style="padding:30px 0;"><p>No prices recorded yet</p></div>`;
+    html += `<div class="empty-state" style="padding:20px 0;"><p>No prices for this size yet</p></div>`;
   } else {
-    $priceList.innerHTML = prices.map((p, idx) => {
+    html += `<div class="detail-section-label">Prices</div>`;
+    prices.forEach((p, idx) => {
       const savings = idx > 0 ? cheapest.price - p.price : null;
       const savingsText = savings > 0 ? `<span class="savings">+RM ${savings.toFixed(2)} savings vs cheapest</span>` :
                           savings !== null ? '' : `<span class="best-tag">⭐ Best price</span>`;
-      return `
+      html += `
         <div class="price-row" data-entry-id="${p.id}">
           <div class="price-row-top">
             <span class="price-row-store">${esc(p.store || '—')}</span>
             <span class="price-row-amount">RM ${p.price.toFixed(2)}</span>
           </div>
           <div class="price-row-meta">
-            <span>${p.qty}</span>
-            <span>·</span>
-            <span>${p.date}</span>
+            <span>${p.qty}</span><span>·</span><span>${p.date}</span>
             ${p.type === 'scraped' ? '<span class="scraped-badge">web</span>' : ''}
           </div>
           ${savingsText}
           <div class="price-row-actions">
-            <button class="btn-ghost btn-xs" onclick="editPriceEntry('${item.id}','${p.id}')">Edit</button>
-            <button class="btn-ghost btn-xs" style="color:var(--red)" onclick="removePriceEntry('${item.id}','${p.id}')">Delete</button>
+            <button class="btn-ghost btn-xs" onclick="editPriceEntry('${item.id}','${variant.id}','${p.id}')">Edit</button>
+            <button class="btn-ghost btn-xs" style="color:var(--red)" onclick="removePriceEntry('${item.id}','${variant.id}','${p.id}')">Delete</button>
           </div>
         </div>`;
-    }).join('');
+    });
   }
 
-  $detailModal.classList.add('show');
+  // Per-variant actions
+  html += `<div class="variant-actions-bar">
+    <button class="btn-ghost btn-sm" onclick="searchItemPrices('${item.id}','${variant.id}')">🔍 Search prices</button>
+    <button class="btn-primary btn-sm" onclick="openPriceModal('${item.id}','${variant.id}')">+ Add price</button>
+  </div>`;
+
+  html += `</div>`;
+  $el.innerHTML = html;
+}
+
+function renameVariantPrompt(itemId, variantId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  const v = item.variants.find(x => x.id === variantId);
+  if (!v) return;
+  const label = prompt('Rename variant:', v.label);
+  if (label && label.trim()) {
+    renameVariant(itemId, variantId, label.trim());
+    openDetail(itemId, variantId);
+  }
 }
 
 function closeDetailModal() {
   $detailModal.classList.remove('show');
   detailItemId = null;
+  detailActiveVariant = null;
 }
 
 // ---- MODAL: Add/Edit Price Entry ----
-function openPriceModal(itemId, entry) {
+function openPriceModal(itemId, variantId, entry) {
   detailItemId = itemId;
+  priceEditVariantId = variantId;
   if (entry) {
     priceEditIdx = entry.id;
     document.getElementById('p-title').textContent = 'Edit Price';
@@ -510,6 +666,7 @@ function openPriceModal(itemId, entry) {
 function closePriceModal() {
   $priceModal.classList.remove('show');
   priceEditIdx = null;
+  priceEditVariantId = null;
 }
 
 function savePriceEntry() {
@@ -523,23 +680,26 @@ function savePriceEntry() {
   if (!data.store.trim()) { toast('Store is required'); return; }
   if (!data.price || parseFloat(data.price) < 0) { toast('Valid price is required'); return; }
 
+  const vId = priceEditVariantId || detailActiveVariant || (items.find(i => i.id === detailItemId)?.variants?.[0]?.id);
+  if (!vId) { toast('No variant selected'); return; }
+
   if (priceEditIdx) {
-    updatePriceEntry(detailItemId, priceEditIdx, data);
+    updatePriceEntry(detailItemId, vId, priceEditIdx, data);
     toast('Price updated');
   } else {
-    addPriceEntry(detailItemId, data);
+    addPriceEntry(detailItemId, vId, data);
     toast('Price added');
   }
   closePriceModal();
-  openDetail(detailItemId);
+  openDetail(detailItemId, vId);
 }
 
-function deletePriceEntry(itemId, entryId) {
+function deletePriceEntry(itemId, variantId, entryId) {
   if (confirm('Delete this price entry?')) {
-    removePriceEntry(itemId, entryId);
+    removePriceEntry(itemId, variantId, entryId);
     toast('Deleted');
     if (items.find(i => i.id === itemId)) {
-      openDetail(itemId);
+      openDetail(itemId, variantId);
     } else {
       closeDetailModal();
     }
@@ -547,27 +707,27 @@ function deletePriceEntry(itemId, entryId) {
 }
 
 // Called inline from HTML
-function editPriceEntry(itemId, entryId) {
+function editPriceEntry(itemId, variantId, entryId) {
   const item = items.find(i => i.id === itemId);
-  if (!item || !item.prices) return;
-  const entry = item.prices.find(p => p.id === entryId);
+  if (!item) return;
+  const variant = item.variants.find(v => v.id === variantId);
+  if (!variant || !variant.prices) return;
+  const entry = variant.prices.find(p => p.id === entryId);
   if (entry) {
     closeDetailModal();
-    openPriceModal(itemId, entry);
+    openPriceModal(itemId, variantId, entry);
   }
 }
 
 // ─── Client-side Price Search ─────────────────────────────────────────
 
-async function searchItemPrices(itemId) {
+async function searchItemPrices(itemId, variantId) {
   const item = items.find(i => i.id === itemId);
   if (!item) return;
 
-  const btn = document.getElementById('btn-search-prices');
-  const $results = document.getElementById('d-scrape-results');
-  btn.textContent = '⏳ Searching...';
-  btn.disabled = true;
-  $results.innerHTML = '<div class="scrape-loading">Searching web for prices...</div>';
+  const btn = document.querySelector(`.variant-section[data-vid="${variantId}"] .btn-primary`) || document.querySelector('[onclick*="searchItemPrices"]');
+  const $el = document.getElementById('d-scrape-results');
+  $el.innerHTML = '<div class="scrape-loading">Searching web for prices...</div>';
 
   // Built-in price database for common items (instant, no web needed)
   const KNOWN_PRICES = {
@@ -624,9 +784,7 @@ async function searchItemPrices(itemId) {
   }
 
   if (knownMatch) {
-    showScrapedResults($results, item.id, knownMatch);
-    btn.textContent = '🔍 Search prices';
-    btn.disabled = false;
+    showScrapedResults($el, item.id, variantId, knownMatch);
     return;
   }
 
@@ -646,9 +804,7 @@ async function searchItemPrices(itemId) {
   }
 
   if (!html) {
-    $results.innerHTML = `<div class="scrape-error">⚠️ Web search unavailable. Ask me to scrape this item instead.</div>`;
-    btn.textContent = '🔍 Search prices';
-    btn.disabled = false;
+    $el.innerHTML = `<div class="scrape-error">⚠️ Web search unavailable. Ask me to scrape this item instead.</div>`;
     return;
   }
 
@@ -661,28 +817,19 @@ async function searchItemPrices(itemId) {
   while ((match = rePrice.exec(html)) !== null) {
     const price = parseFloat(match[1].replace(',', ''));
     if (isNaN(price) || price < 0.10 || price > 999) continue;
-
-    // Get context around the price for store name
     const start = Math.max(0, match.index - 80);
     const ctx = html.substring(start, match.index)
       .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     const words = ctx.split(' ');
     const store = words.slice(-3).join(' ').replace(/[‑–—•·]/g, '').trim().slice(0, 28) || 'Online';
 
-    // Find best source name nearby
-    const fullCtx = html.substring(start, match.index + 20)
-      .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const nameMatch = fullCtx.match(/.{0,40}RM/);
-    const name = nameMatch ? nameMatch[0].replace(/\s*RM\s*$/, '').trim().slice(0, 40) : item.name;
-
     const key = store + '|' + price.toFixed(2);
     if (!seen.has(key)) {
       seen.add(key);
-      found.push({ store, price, name, key });
+      found.push({ store, price, key });
     }
   }
 
-  // Deduplicate: keep best price per store
   const best = {};
   for (const f of found) {
     if (!best[f.store] || f.price < best[f.store].price) best[f.store] = f;
@@ -691,16 +838,13 @@ async function searchItemPrices(itemId) {
   const results = Object.values(best).sort((a, b) => a.price - b.price).slice(0, 8);
 
   if (results.length === 0) {
-    $results.innerHTML = `<div class="scrape-error">No prices found online. Ask me to scrape this item.</div>`;
+    $el.innerHTML = `<div class="scrape-error">No prices found online. Ask me to scrape this item.</div>`;
   } else {
-    showScrapedResults($results, item.id, results);
+    showScrapedResults($el, item.id, variantId, results);
   }
-
-  btn.textContent = '🔍 Search prices';
-  btn.disabled = false;
 }
 
-function showScrapedResults($el, itemId, prices) {
+function showScrapedResults($el, itemId, variantId, prices) {
   $el.innerHTML = `
     <div class="detail-section-label" style="margin-top:12px;">🌐 Found online</div>
     ${prices.map(r => `
@@ -711,15 +855,15 @@ function showScrapedResults($el, itemId, prices) {
           ${r.qty ? `<span class="price-row-meta" style="margin-left:auto;">${esc(r.qty)}</span>` : ''}
         </div>
         <div class="price-row-actions">
-          <button class="btn-primary btn-xs" onclick="addScrapedPrice('${itemId}','${esc(r.store)}',${r.price},'${esc(r.qty || '1 unit')}')">+ Add</button>
+          <button class="btn-primary btn-xs" onclick="addScrapedPrice('${itemId}','${variantId}','${esc(r.store)}',${r.price},'${esc(r.qty || '1 unit')}')">+ Add</button>
         </div>
       </div>`).join('')}
     <div class="scrape-note">Prices are approximate — verify at store</div>`;
 }
 
-function addScrapedPrice(itemId, store, price, qty) {
+function addScrapedPrice(itemId, variantId, store, price, qty) {
   const today = new Date().toISOString().split('T')[0];
-  addPriceEntry(itemId, {
+  addPriceEntry(itemId, variantId, {
     store: store,
     price: price,
     qty: qty || '1 unit',
@@ -728,7 +872,7 @@ function addScrapedPrice(itemId, store, price, qty) {
     type: 'scraped'
   });
   toast('Added: ' + store + ' — RM ' + price.toFixed(2));
-  openDetail(itemId);
+  openDetail(itemId, variantId);
 }
 
 // Helpers

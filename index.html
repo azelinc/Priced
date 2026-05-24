@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d1117">
   <meta name="description" content="Price database — compare and track item prices across stores and websites">
   <title>Priced — Price Database</title>
-  <link rel="stylesheet" href="main.css?v=4">
+  <link rel="stylesheet" href="main.css?v=5">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏷️</text></svg>">
 </head>
@@ -71,48 +71,24 @@
         <h2 id="d-title"></h2>
         <div class="detail-header-meta">
           <span class="cat-badge" id="d-cat-badge"></span>
-          <span class="detail-id" id="d-count"></span>
         </div>
       </div>
 
-      <!-- Summary cards -->
-      <div class="detail-summary">
-        <div class="summary-card">
-          <div class="summary-label">Price range</div>
-          <div class="summary-value" id="d-range">—</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-label">Average</div>
-          <div class="summary-value" id="d-avg">—</div>
-        </div>
-      </div>
+      <!-- Variant tabs (populated by JS) -->
+      <div class="variant-tabs" id="d-variant-tabs"></div>
 
-      <!-- Best deal -->
-      <div class="best-card" id="d-best-card">
-        <div class="best-label">⭐ Best price</div>
-        <div class="best-details">
-          <span class="best-store" id="d-best-store"></span>
-          <span class="best-price" id="d-best-price"></span>
-          <span class="best-meta" id="d-best-qty"></span>
-          <span class="best-meta" id="d-best-date"></span>
-        </div>
-      </div>
+      <!-- Variant sections (populated by JS) -->
+      <div id="d-variant-sections"></div>
 
-      <!-- Price list -->
-      <div class="detail-section-label">All prices</div>
-      <div id="d-price-list"></div>
-
-      <!-- Scrape results (populated by search) -->
+      <!-- Scrape results -->
       <div id="d-scrape-results"></div>
 
       <div class="modal-actions" style="margin-top:16px;">
         <div>
           <button class="btn-ghost btn-sm" id="d-edit-item">✏️ Edit item</button>
-          <button class="btn-ghost btn-sm" id="btn-search-prices" style="margin-left:4px;">🔍 Search prices</button>
         </div>
         <div class="modal-actions-right">
           <button class="btn-ghost btn-sm" id="btn-detail-close">Close</button>
-          <button class="btn-primary btn-sm" id="btn-detail-add-price">+ Add price</button>
         </div>
       </div>
     </div>
@@ -163,6 +139,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
