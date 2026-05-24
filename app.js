@@ -67,16 +67,7 @@ function initCategories() {
       if (selectedCat) e.target.classList.add('selected');
     }
   });
-  // Detail modal category chips
-  document.getElementById('d-cat-chips').innerHTML = CATEGORIES.map(c =>
-    `<span class="chip" data-cat="${c.id}">${c.label}</span>`
-  ).join('');
-  document.getElementById('d-cat-chips').addEventListener('click', e => {
-    if (e.target.classList.contains('chip')) {
-      document.querySelectorAll('#d-cat-chips .chip').forEach(c => c.classList.remove('selected'));
-      e.target.classList.add('selected');
-    }
-  });
+
 }
 
 function bindEvents() {
