@@ -1,0 +1,19 @@
+{
+  "name": "Priced — Grocery Price Tracker",
+  "short_name": "Priced",
+  "description": "Track and compare grocery item prices across stores",
+  "start_url": "/Priced/",
+  "scope": "/Priced/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0d1117",
+  "background_color": "#0d1117",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230d1117' width='100' height='100' rx='20'/><text y='.75em' font-size='70' x='50' text-anchor='middle'>🏷️</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
