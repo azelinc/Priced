@@ -158,6 +158,15 @@ h1 {
   flex-wrap: wrap;
 }
 
+.price-count {
+  color: var(--primary);
+  font-weight: 500;
+}
+.price-count.empty {
+  color: var(--text3);
+  font-style: italic;
+}
+
 .item-price {
   font-weight: 700;
   font-size: 1.05rem;
@@ -166,8 +175,9 @@ h1 {
   text-align: right;
 }
 .item-price .unit { font-weight: 400; font-size: 0.75rem; color: var(--text3); }
+.item-price.no-price { color: var(--text3); font-size: 0.9rem; }
 
-/* Category chips in modal */
+/* Category chips */
 .chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -187,9 +197,8 @@ h1 {
 }
 .chip:hover { border-color: var(--text3); color: var(--text); }
 .chip.selected { background: var(--primary-dim); border-color: var(--primary); color: #fff; }
-.chip-row input { flex: 1; min-width: 120px; }
 
-/* Modal */
+/* Modal base */
 .modal-overlay {
   display: none;
   position: fixed;
@@ -214,7 +223,13 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.modal h2 { font-size: 1.15rem; margin-bottom: 16px; color: var(--text); }
+.modal-wide { max-width: 520px; }
+
+.modal h2 {
+  font-size: 1.15rem;
+  margin-bottom: 4px;
+  color: var(--text);
+}
 
 .field { margin-bottom: 14px; }
 .field label {
@@ -290,6 +305,7 @@ button {
 .btn-ghost:hover { color: var(--text); background: var(--surface2); }
 
 .btn-sm { padding: 8px 16px; font-size: 0.85rem; }
+.btn-xs { padding: 4px 10px; font-size: 0.78rem; }
 
 /* FAB */
 .fab {
@@ -333,31 +349,184 @@ button {
 }
 .toast.show { opacity: 1; }
 
+/* Detail view */
+.detail-header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-header-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.cat-badge {
+  font-size: 0.78rem;
+  padding: 2px 10px;
+  border-radius: 12px;
+  border: 1px solid;
+  font-weight: 500;
+}
+
+.detail-id {
+  font-size: 0.8rem;
+  color: var(--text2);
+}
+
+/* Summary cards */
+.detail-summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.summary-card {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  text-align: center;
+}
+
+.summary-label {
+  font-size: 0.72rem;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.summary-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Best deal card */
+.best-card {
+  background: linear-gradient(135deg, rgba(63,185,80,0.1), rgba(63,185,80,0.05));
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.best-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--green);
+  margin-bottom: 8px;
+}
+
+.best-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.best-store {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.best-price {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--green);
+}
+
+.best-meta {
+  font-size: 0.8rem;
+  color: var(--text2);
+}
+
+/* Detail section label */
+.detail-section-label {
+  font-size: 0.78rem;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+/* Price rows */
+.price-row {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 6px;
+}
+
+.price-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.price-row-store {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.price-row-amount {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--green);
+}
+
+.price-row-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+
+.price-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+/* Badges */
+.scraped-badge {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--primary-dim);
+  color: #fff;
+  font-weight: 500;
+}
+
+.best-tag {
+  font-size: 0.75rem;
+  color: var(--green);
+  font-weight: 500;
+}
+
+.savings {
+  font-size: 0.75rem;
+  color: var(--orange);
+  font-weight: 500;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
   .app { padding: 12px 12px 90px; }
   .toolbar { flex-direction: column; }
   .toolbar select { min-width: auto; }
   .field-row { flex-direction: column; gap: 0; }
-}
-
-/* Auth banner */
-.auth-banner {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  color: var(--text2);
-}
-.auth-banner button {
-  background: var(--primary-dim);
-  color: #fff;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 0.8rem;
+  .detail-summary { flex-direction: column; }
 }
