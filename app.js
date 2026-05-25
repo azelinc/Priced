@@ -798,60 +798,39 @@ async function searchItemPrices(itemId, variantId) {
     return;
   }
 
-  // Fallback: try web search
-  const query = encodeURIComponent(item.name + ' price Malaysia RM');
-  const proxies = [
-    `https://api.allorigins.win/raw?url=https://www.google.com/search?q=${query}`,
-    `https://corsproxy.io/?url=${encodeURIComponent('https://www.google.com/search?q=' + query)}`,
-  ];
+  // Not in knowledge base — request via Firebase queue
+  requestScrapeViaFirebase($el, item.id, variantId, item.name);
+}
 
-  let html = '';
-  for (const proxyUrl of proxies) {
-    try {
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-      if (resp.ok) { html = await resp.text(); break; }
-    } catch(_) { continue; }
-  }
+async function requestScrapeViaFirebase($el, itemId, variantId, itemName) {
+  $el.innerHTML = '<div class="scrape-loading">⏳ Requesting price search...<br><span style="font-size:0.75rem;color:var(--text3)">This runs server-side, takes ~10s</span></div>';
 
-  if (!html) {
-    $el.innerHTML = `<div class="scrape-error">⚠️ Web search unavailable. Ask me to scrape this item instead.</div>`;
-    return;
-  }
+  // Normalize name for result lookup
+  const norm = itemName.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
 
-  // Parse prices from HTML
-  const found = [];
-  const rePrice = /RM\s*([0-9,.]+)/g;
-  let match;
-  const seen = new Set();
+  // Write request to Firebase
+  const reqId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const reqRef = db.ref(`_scrape/requests/${reqId}`);
+  await reqRef.set({ name: itemName, norm, timestamp: Date.now() });
 
-  while ((match = rePrice.exec(html)) !== null) {
-    const price = parseFloat(match[1].replace(',', ''));
-    if (isNaN(price) || price < 0.10 || price > 999) continue;
-    const start = Math.max(0, match.index - 80);
-    const ctx = html.substring(start, match.index)
-      .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const words = ctx.split(' ');
-    const store = words.slice(-3).join(' ').replace(/[‑–—•·]/g, '').trim().slice(0, 28) || 'Online';
-
-    const key = store + '|' + price.toFixed(2);
-    if (!seen.has(key)) {
-      seen.add(key);
-      found.push({ store, price, key });
-    }
-  }
-
-  const best = {};
-  for (const f of found) {
-    if (!best[f.store] || f.price < best[f.store].price) best[f.store] = f;
-  }
-
-  const results = Object.values(best).sort((a, b) => a.price - b.price).slice(0, 8);
-
-  if (results.length === 0) {
-    $el.innerHTML = `<div class="scrape-error">No prices found online. Ask me to scrape this item.</div>`;
-  } else {
-    showScrapedResults($el, item.id, variantId, results);
-  }
+  // Poll for results
+  let attempts = 0;
+  const maxAttempts = 12; // ~36 seconds total
+  const poll = () => {
+    attempts++;
+    db.ref(`_scrape/results/${norm}`).once('value', snap => {
+      const data = snap.val();
+      if (data && data.results && data.results.length > 0) {
+        showScrapedResults($el, itemId, variantId, data.results);
+      } else if (attempts < maxAttempts) {
+        $el.innerHTML = `<div class="scrape-loading">⏳ Searching... (${attempts}/${maxAttempts})</div>`;
+        setTimeout(poll, 3000);
+      } else {
+        $el.innerHTML = `<div class="scrape-error">No prices found. Ask me to add this item to the database.</div>`;
+      }
+    });
+  };
+  setTimeout(poll, 3000);
 }
 
 function showScrapedResults($el, itemId, variantId, prices) {
